@@ -1,0 +1,196 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Pro Dash: Challenge Edition</title>
+    <style>
+        body {
+            display: flex; flex-direction: column; align-items: center;
+            margin: 0; background-color: #1a1a1a; font-family: 'Segoe UI', sans-serif;
+            color: white; touch-action: manipulation; overflow-x: hidden;
+        }
+        canvas {
+            background-color: #3498db; margin-top: 10px;
+            box-shadow: 0 0 30px rgba(0,0,0,0.5); border-radius: 8px;
+            width: 95vw; max-width: 800px;
+        }
+        .ui-panel {
+            background: #2c3e50; padding: 15px; border-radius: 10px;
+            display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+            gap: 15px; width: 90vw; max-width: 770px; margin-top: 15px;
+        }
+        .stat-box { text-align: center; background: #34495e; padding: 10px; border-radius: 5px; }
+        button { 
+            padding: 10px; border: none; border-radius: 5px; cursor: pointer;
+            font-weight: bold; background: #27ae60; color: white;
+        }
+        input { width: 100%; }
+    </style>
+</head>
+<body>
+
+<div style="margin-top: 10px; font-size: 20px;">🏆 Best: <span id="bestScore">0</span></div>
+<canvas id="gameCanvas" width="800" height="400"></canvas>
+
+<div class="ui-panel">
+    <div class="stat-box">
+        <label>Cube Color</label>
+        <input type="color" id="pColor" value="#f1c40f">
+    </div>
+    <div class="stat-box">
+        <label>Physics</label>
+        <input type="range" id="gravity" min="0.5" max="1.5" value="0.9" step="0.1">
+        <small>Gravity</small>
+    </div>
+    <div class="stat-box">
+        <button onclick="copyScore()">📋 Copy Score to Challenge Friends</button>
+    </div>
+</div>
+
+<script>
+    const canvas = document.getElementById("gameCanvas");
+    const ctx = canvas.getContext("2d");
+    const pColorInput = document.getElementById("pColor");
+    const gravInput = document.getElementById("gravity");
+    const bestDisplay = document.getElementById("bestScore");
+
+    let frames = 0;
+    let score = 0;
+    let best = localStorage.getItem("dashBest") || 0;
+    bestDisplay.innerText = best;
+    let gameOver = false;
+    let gameSpeed = 6;
+    let obstacles = [];
+    let nextSpawn = 0;
+
+    const groundY = canvas.height - 50;
+
+    const player = {
+        x: 80, y: groundY - 40, size: 40, dy: 0, grounded: true,
+        jump: function() {
+            if (this.grounded) {
+                this.dy = -15;
+                this.grounded = false;
+            }
+        },
+        update: function() {
+            this.dy += parseFloat(gravInput.value);
+            this.y += this.dy;
+            if (this.y + this.size >= groundY) {
+                this.y = groundY - this.size;
+                this.dy = 0;
+                this.grounded = true;
+            }
+        },
+        draw: function() {
+            ctx.fillStyle = pColorInput.value;
+            ctx.fillRect(this.x, this.y, this.size, this.size);
+            ctx.strokeStyle = "white"; ctx.strokeRect(this.x, this.y, this.size, this.size);
+        }
+    };
+
+    function spawnObstacle() {
+        const types = ['single', 'double', 'triple', 'tall'];
+        const type = types[Math.floor(Math.random() * types.length)];
+        
+        let obs = { x: canvas.width, type: type };
+        
+        if (type === 'single') { obs.w = 40; obs.h = 40; }
+        else if (type === 'double') { obs.w = 80; obs.h = 40; }
+        else if (type === 'triple') { obs.w = 120; obs.h = 40; }
+        else if (type === 'tall') { obs.w = 40; obs.h = 70; }
+        
+        obstacles.push(obs);
+        // Randomize next spawn time to make it unpredictable
+        nextSpawn = frames + Math.floor(Math.random() * 50) + (100 - Math.min(score * 2, 60));
+    }
+
+    function handleObstacles() {
+        if (frames >= nextSpawn) spawnObstacle();
+
+        for (let i = obstacles.length - 1; i >= 0; i--) {
+            let o = obstacles[i];
+            o.x -= gameSpeed;
+
+            ctx.fillStyle = "#ff4757";
+            ctx.beginPath();
+            // Draw Spiky shapes
+            if(o.type === 'tall') {
+                ctx.rect(o.x, groundY - o.h, o.w, o.h);
+            } else {
+                for(let j=0; j < (o.w/40); j++) {
+                    ctx.moveTo(o.x + (j*40), groundY);
+                    ctx.lineTo(o.x + 20 + (j*40), groundY - 40);
+                    ctx.lineTo(o.x + 40 + (j*40), groundY);
+                }
+            }
+            ctx.fill();
+
+            // Collision
+            if (player.x < o.x + o.w - 5 && player.x + player.size > o.x + 5 && 
+                player.y + player.size > groundY - o.h + 5) {
+                endGame();
+            }
+
+            if (o.x + o.w < 0) {
+                obstacles.splice(i, 1);
+                score++;
+                gameSpeed += 0.1; // Game gets harder every spike!
+            }
+        }
+    }
+
+    function endGame() {
+        gameOver = true;
+        if (score > best) {
+            best = score;
+            localStorage.setItem("dashBest", best);
+            bestDisplay.innerText = best;
+        }
+    }
+
+    function resetGame() {
+        score = 0; gameSpeed = 6; obstacles = []; frames = 0; nextSpawn = 0;
+        gameOver = false; gameLoop();
+    }
+
+    function gameLoop() {
+        if (gameOver) {
+            ctx.fillStyle = "rgba(0,0,0,0.7)"; ctx.fillRect(0,0,canvas.width,canvas.height);
+            ctx.fillStyle = "white"; ctx.textAlign = "center"; ctx.font = "30px Arial";
+            ctx.fillText("GAME OVER", canvas.width/2, 180);
+            ctx.fillText("Score: " + score, canvas.width/2, 220);
+            ctx.font = "15px Arial"; ctx.fillText("Tap to Restart", canvas.width/2, 260);
+            return;
+        }
+
+        ctx.clearRect(0,0,canvas.width,canvas.height);
+        ctx.fillStyle = "#2c3e50"; ctx.fillRect(0, groundY, canvas.width, 50);
+        
+        player.update();
+        player.draw();
+        handleObstacles();
+
+        ctx.fillStyle = "white"; ctx.textAlign = "left"; ctx.font = "20px Arial";
+        ctx.fillText("Score: " + score, 20, 30);
+        
+        frames++;
+        requestAnimationFrame(gameLoop);
+    }
+
+    function copyScore() {
+        const text = `I just scored ${score} on Pro Dash! Can you beat my Best of ${best}?`;
+        navigator.clipboard.writeText(text);
+        alert("Score copied to clipboard!");
+    }
+
+    // Input Listeners (PC & Mobile)
+    window.addEventListener("keydown", (e) => { if(e.code === "Space") { e.preventDefault(); gameOver ? resetGame() : player.jump(); }});
+    canvas.addEventListener("touchstart", (e) => { e.preventDefault(); gameOver ? resetGame() : player.jump(); });
+    canvas.addEventListener("mousedown", () => { gameOver ? resetGame() : player.jump(); });
+
+    gameLoop();
+</script>
+</body>
+</html>
